@@ -91,20 +91,14 @@ def get_batch_data_from_replay_buffer(replay_buffer, batch_size, device):
     return rc_state, rc_action
 
 
-def print_evaluate_msg(loss, step_cnt, total_step, start_time):
+def print_training_msg(loss, step_cnt, total_step, start_time):
+    cur_time = time.perf_counter()
+    elapse = (cur_time - start_time) / 60
+    left_time = ((total_step - step_cnt) / step_cnt) * elapse
 
-    if step_cnt % 100 == 0:
+    print("the loss in %dth batch is: %f" % (step_cnt, loss))
+    print("Elapse %f mins, estimate %f mins left " % (elapse, left_time))
 
-        cur_time = time.perf_counter()
-        elapse = (cur_time - start_time) / 60
-        left_time = ((total_step - step_cnt) / step_cnt) * elapse
-
-        print("the loss in %dth batch is: %f" % (step_cnt, loss))
-        print("Elapse %f mins, estimate %f mins left " % (elapse, left_time))
-
-    if step_cnt % 2000 == 0:
-        print("Evaluate at %d steps" % (step_cnt))
-        pass
 
 def get_train_msg(args, num_batches, total_step):
 
@@ -118,6 +112,84 @@ def get_train_msg(args, num_batches, total_step):
         + "=================================="
 
     return msg
+
+
+def evaluate(model, arg, state_size, item_num, eval_sample = 1000):
+
+    eval_data=pd.read_pickle(os.path.join(args.data, 'sampled_val.df'))
+    eval_ids = eval_data.session_id.unique()
+
+    groups = eval_data.groupby('session_id')
+    batch = 100
+    evaluated=0
+    total_clicks=0.0
+    total_purchase = 0.0
+    total_reward = [0, 0, 0, 0]
+    hit_clicks=[0,0,0,0]
+    ndcg_clicks=[0,0,0,0]
+    hit_purchase=[0,0,0,0]
+    ndcg_purchase=[0,0,0,0]
+    topk = [5, 10, 15, 20]
+    state_size = 10
+
+    model.eval()
+
+    sample_ids = np.random.choice(eval_ids, eval_sample)
+
+    for id in sample_ids:
+
+        states, len_states, actions, rewards = [], [], [], []
+
+        group = groups.get_group(id)
+
+        history=[]
+
+        for index, row in group.iterrows():
+            state=list(history)
+            state=pad_history(state, state_size, item_num)
+
+            states.append(state)
+            action=row['item_id']
+            is_buy=row['is_buy']
+
+            reward = arg.r_buy if is_buy == 1 else args.r_click
+
+            if is_buy==1:
+                total_purchase+=1.0
+            else:
+                total_clicks+=1.0
+
+            actions.append(action)
+            rewards.append(reward)
+            history.append(row['item_id'])
+
+        with th.no_grad():
+            prediction= model(th.Tensor(np.array(states)).type(th.int64))
+
+        sorted_list=np.argsort(prediction).reshape((-1, item_num))
+        calculate_hit(sorted_list,
+                      topk,
+                      actions,
+                      rewards,
+                      args.r_click,
+                      total_reward,
+                      hit_clicks,
+                      ndcg_clicks,
+                      hit_purchase,
+                      ndcg_purchase)
+
+    print('#############################################################')
+    print('total clicks: %d, total purchase:%d' % (total_clicks, total_purchase))
+    for i in range(len(topk)):
+        hr_click=hit_clicks[i]/total_clicks
+        hr_purchase=hit_purchase[i]/total_purchase
+        ng_click=ndcg_clicks[i]/total_clicks
+        ng_purchase=ndcg_purchase[i]/total_purchase
+        print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+        print('cumulative reward @ %d: %f' % (topk[i],total_reward[i]))
+        print('clicks hr ndcg @ %d : %f, %f' % (topk[i],hr_click,ng_click))
+        print('purchase hr and ndcg @%d : %f, %f' % (topk[i], hr_purchase, ng_purchase))
+    print('#############################################################')
 
 
 def train_model(arg):
@@ -135,7 +207,6 @@ def train_model(arg):
     start_time = time.perf_counter()
 
     model.to(device)
-    model.train()
 
     step_cnt = 0
 
@@ -146,6 +217,8 @@ def train_model(arg):
         print("\nStart of epoch %d" % (i,))
 
         for j in range(num_batches):
+
+            model.train()
 
             model.zero_grad()
 
@@ -159,7 +232,11 @@ def train_model(arg):
 
             # Debug Msg
             step_cnt += 1
-            print_evaluate_msg(loss, step_cnt, total_step, start_time)
+
+            if step_cnt % 50 == 0:
+                print_training_msg(loss, step_cnt, total_step, start_time)
+            if step_cnt % 50 == 0:
+                evaluate(model, arg, state_size, item_num)
 
 
 if __name__ == '__main__':

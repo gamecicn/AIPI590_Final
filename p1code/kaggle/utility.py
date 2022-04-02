@@ -65,20 +65,24 @@ def normalize(inputs,
 
     return outputs
 
-def calculate_hit(sorted_list,topk,true_items,rewards,r_click,total_reward,hit_click,ndcg_click,hit_purchase,ndcg_purchase):
-    for i in range(len(topk)):
-        rec_list = sorted_list[:, -topk[i]:]
-        for j in range(len(true_items)):
-            if true_items[j] in rec_list[j]:
-                rank = topk[i] - np.argwhere(rec_list[j] == true_items[j])
-                total_reward[i] += rewards[j]
-                if rewards[j] == r_click:
-                    hit_click[i] += 1.0
-                    ndcg_click[i] += 1.0 / np.log2(rank + 1)
-                else:
-                    hit_purchase[i] += 1.0
-                    ndcg_purchase[i] += 1.0 / np.log2(rank + 1)
 
+def calculate_hit(sorted_list,topk,true_items,rewards,r_click,total_reward,hit_click,ndcg_click,hit_purchase,ndcg_purchase):
+
+    try:
+        for i in range(len(topk)):
+            rec_list = sorted_list[:, -topk[i]:]
+            for j in range(len(true_items)):
+                if true_items[j] in rec_list[j]:
+                    rank = topk[i] - np.argwhere(rec_list[j] == true_items[j])
+                    total_reward[i] += rewards[j]
+                    if rewards[j] == r_click:
+                        hit_click[i] += 1.0
+                        ndcg_click[i] += 1.0 / np.log2(rank + 1)
+                    else:
+                        hit_purchase[i] += 1.0
+                        ndcg_purchase[i] += 1.0 / np.log2(rank + 1)
+    except:
+        a = 0
 
 # class Memory():
 #     def __init__(self):
