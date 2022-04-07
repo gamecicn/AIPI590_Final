@@ -20,6 +20,8 @@ args = {
 
     "train_share"       : 0.8,  # training data share from whole data
 
+    "rp_buffer_size"    : 16,  # replay buffer
+
     # Model
     "gru_layer"         : 1,
     "hidden_factor"     : 64,
@@ -148,7 +150,7 @@ class ReplayBuffer():
         self.groups = self.raw_data.groupby(['customer_id'])
 
         self.batch_size = batch_size
-        self.buffer_size = 16 * self.batch_size
+        self.buffer_size = args["rp_buffer_size"] * self.batch_size
 
         self.buffer = []
         self.reset()
@@ -268,6 +270,7 @@ def train_model():
     start_time = time.perf_counter()
 
     for i in range(args['epoch']):
+
         rb_train.reset()
 
         for idx, batch in enumerate(rb_train):
